@@ -24,7 +24,7 @@ defmodule Sobelow.Config.CSWH do
 
     Enum.each(endpoint_contexts(ast), fn {module, body} ->
       body
-      |> Parse.get_funs_of_type(:socket)
+      |> Config.get_unskipped_sockets()
       |> handle_sockets(endpoint, endpoint_origin(module))
     end)
   end

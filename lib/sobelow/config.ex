@@ -135,15 +135,23 @@ defmodule Sobelow.Config do
     |> Enum.map(fn {pipeline, _skips} -> pipeline end)
   end
 
+  @doc false
+  def get_unskipped_sockets(ast) do
+    ast
+    |> Parse.get_sockets_with_skips()
+    |> Enum.reject(fn {_socket, skips} -> skipped?(skips, CSWH) end)
+    |> Enum.map(fn {socket, _skips} -> socket end)
+  end
+
   defp get_pipelines_with_skips(filepath) do
     filepath
     |> Parse.ast()
     |> Parse.get_pipelines_with_skips()
   end
 
-  # A pipeline skip matches either the specific check (`Config.CSRF`) or the
+  # A declaration skip matches either the specific check (`Config.CSRF`) or the
   # parent module (`Config`), which suppresses every Config check on that
-  # pipeline. This mirrors `-i Config`, which drops the whole Config group.
+  # declaration. This mirrors `-i Config`, which drops the whole Config group.
   defp skipped?(skips, check_mod) do
     Sobelow.get_env(:skip) &&
       Enum.any?(skips, fn skip ->

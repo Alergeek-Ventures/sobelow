@@ -13,10 +13,10 @@ defmodule Sobelow.Parse.Metadata do
     init_acc = %{def_funs: [], use_funs: [], import_funs: [], module_attrs: []}
     {_, acc} = Macro.prewalk(ast, init_acc, &get_meta_funs(&1, &2))
 
-    # Pipeline skips must not also attach to the next function. Most files have
+    # Pipeline/socket skips must not also attach to the next function. Most files have
     # none, so avoid a second traversal unless a skip attribute was collected.
     if Enum.any?(acc.def_funs, &skip_attr?/1) do
-      consumed = pipeline_skip_attrs(ast)
+      consumed = declaration_skip_attrs(ast)
       Map.update!(acc, :def_funs, &Enum.reject(&1, fn fun -> MapSet.member?(consumed, fun) end))
     else
       acc
@@ -69,7 +69,7 @@ defmodule Sobelow.Parse.Metadata do
 
     consumed =
       if Enum.any?(metadata.file.def_funs, &skip_attr?/1),
-        do: pipeline_skip_attrs(ast),
+        do: declaration_skip_attrs(ast),
         else: MapSet.new()
 
     clean = fn meta ->
@@ -161,21 +161,26 @@ defmodule Sobelow.Parse.Metadata do
   defp skip_attr?(_), do: false
 
   @doc false
-  # Pair pipelines with immediately preceding skip attributes. Collect all
-  # pipelines independently so nested ones still run without associated skips.
-  def get_pipelines_with_skips(ast) do
-    skips = Map.new(skip_associations(ast), fn {pipeline, skips, _attrs} -> {pipeline, skips} end)
+  def get_pipelines_with_skips(ast), do: get_declarations_with_skips(ast, :pipeline)
+
+  @doc false
+  def get_sockets_with_skips(ast), do: get_declarations_with_skips(ast, :socket)
+
+  # Keep original nodes and collect all declarations, including unannotated ones.
+  defp get_declarations_with_skips(ast, type) do
+    skips =
+      Map.new(skip_associations(ast), fn {declaration, skips, _attrs} -> {declaration, skips} end)
 
     ast
-    |> Calls.get_funs_of_type(:pipeline)
+    |> Calls.get_funs_of_type(type)
     |> Enum.reverse()
     |> Enum.map(&{&1, Map.get(skips, &1, [])})
   end
 
-  defp pipeline_skip_attrs(ast) do
+  defp declaration_skip_attrs(ast) do
     ast
     |> skip_associations()
-    |> Enum.flat_map(fn {_pipeline, _skips, attrs} -> attrs end)
+    |> Enum.flat_map(fn {_declaration, _skips, attrs} -> attrs end)
     |> MapSet.new()
   end
 
@@ -191,28 +196,28 @@ defmodule Sobelow.Parse.Metadata do
   end
 
   defp collect_skip_associations({:__block__, _, stmts} = ast, acc) when is_list(stmts) do
-    {ast, acc ++ associate_skips_with_pipelines(stmts)}
+    {ast, acc ++ associate_skips_with_declarations(stmts)}
   end
 
   defp collect_skip_associations(ast, acc), do: {ast, acc}
 
-  # Only adjacent attributes in the same block bind to a pipeline. A pipeline
+  # Only adjacent attributes in the same block bind to a declaration. A declaration
   # with a skip always has a block containing both statements.
-  defp associate_skips_with_pipelines(statements) do
+  defp associate_skips_with_declarations(statements) do
     {associations, _pending} =
       Enum.reduce(statements, {[], []}, fn
         {:@, _, [{:sobelow_skip, _, [skips]}]} = attr, {acc, pending} when is_list(skips) ->
           {acc, pending ++ [{attr, skips}]}
 
-        {:pipeline, _, _} = pipeline, {acc, pending} ->
-          {[{pipeline, pending} | acc], []}
+        {kind, _, _} = declaration, {acc, pending} when kind in [:pipeline, :socket] ->
+          {[{declaration, pending} | acc], []}
 
         _, {acc, _pending} ->
           {acc, []}
       end)
 
-    Enum.map(associations, fn {pipeline, pending} ->
-      {pipeline, Enum.flat_map(pending, &elem(&1, 1)), Enum.map(pending, &elem(&1, 0))}
+    Enum.map(associations, fn {declaration, pending} ->
+      {declaration, Enum.flat_map(pending, &elem(&1, 1)), Enum.map(pending, &elem(&1, 0))}
     end)
   end
 

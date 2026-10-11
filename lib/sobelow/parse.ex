@@ -22,6 +22,7 @@ defmodule Sobelow.Parse do
   defdelegate get_module_meta_funs(ast), to: Metadata
   defdelegate file_metadata(ast), to: Metadata
   defdelegate get_pipelines_with_skips(ast), to: Metadata
+  defdelegate get_sockets_with_skips(ast), to: Metadata
 
   # EEx/HEEx expressions and controller render assignments.
   defdelegate get_meta_template_funs(filepath), to: Template
